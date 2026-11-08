@@ -1,0 +1,48 @@
+#==========================================
+#3-Class DR (Normal, NPDR, PDR) Configuration
+#==========================================
+
+dataset:
+  csv_path: "../../data/raw/labels_brset.csv"
+  img_dir: "../../data/raw/images/"
+  image_size: 448
+  num_tabular_features: 8  # 5 پایه + 3 آناتومیک (macula, optic_disc, vessels)
+
+model:
+  embed_dim: 256
+  vision_weights: "/home/ubuntu/BRSET-Multimodal-SSL/data/weights/flair_resnet.pth"
+  temperature: 0.07
+
+fusion:
+  fusion_type: "concat"
+  dropout_rate: 0.4
+  hidden_dim: 256
+  freeze_ssl_backbone: False
+
+ssl_training:
+  batch_size: 64
+  epochs: 500
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  num_workers: 4
+  checkpoint_dir: "../../data/processed/checkpoints_dr3/"
+  resume_from_checkpoint: True
+  save_every_n_epochs: 5
+  early_stopping_patience: 25  
+
+finetuning:
+  batch_size: 32
+  learning_rate: 0.0001
+  weight_decay: 0.015
+  epochs: 50
+  save_dir: "../../data/processed/finetuned_models_dr3/"
+  early_stopping_patience: 15
+  label_percent: 100
+  num_workers: 8
+  mixed_precision: True
+
+task:
+  name: "dr_3class"
+  num_classes: 3
+  classes: ["Normal", "NPDR", "PDR"]
+  criterion: "WeightedCrossEntropyLoss"

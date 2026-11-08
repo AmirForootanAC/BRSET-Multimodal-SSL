@@ -1,0 +1,31 @@
+# Data and Weights (Heavy Files)
+data/raw/
+data/processed/
+data/weights/
+*.pth
+*.pt
+*.h5
+*.zip
+*.csv
+*.jpg
+*.jpeg
+*.png
+
+# Python Environments
+venv/
+.venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Kaggle and Secrets
+kaggle.json
+physionet_cookies.txt
+
+# IDEs and OS Files
+.vscode/
+.idea/
+.DS_Store
+.ipynb_checkpoints/

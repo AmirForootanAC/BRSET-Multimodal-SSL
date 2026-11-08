@@ -1,0 +1,36 @@
+model:
+  embed_dim: 256
+  temperature: 0.1
+
+dataset:
+  csv_path: "data/raw/labels_brset.csv"
+  img_dir: "data/raw/images/"
+  image_size: 224
+  num_tabular_features: 6
+
+training:
+  epochs: 250
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  batch_size: 32
+  num_workers: 2
+  checkpoint_dir: "data/processed/checkpoints_v2/"
+  resume_from_checkpoint: False
+  save_every_n_epochs: 5
+  early_stopping_patience: 15
+
+finetuning:
+  batch_size: 48
+  learning_rate: 0.0005
+  backbone_lr: 0.00001
+  weight_decay: 0.01
+  epochs: 75
+  save_dir: "data/processed/finetuned_models_v2/"
+  tasks:
+    multilabel_10:
+      num_classes: 10
+
+fusion:
+  hidden_dim: 128
+  dropout_rate: 0.4
+  freeze_ssl_backbone: false

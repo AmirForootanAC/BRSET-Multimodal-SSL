@@ -1,0 +1,58 @@
+# ==========================================
+# BRSET Multimodal SSL Configuration
+# ==========================================
+
+dataset:
+  csv_path: "data/raw/labels_brset.csv"
+  img_dir: "data/raw/images/"
+  image_size: 224
+  num_tabular_features: 5
+
+model:
+  embed_dim: 256
+  vision_weights: "data/weights/flair_resnet.pth"
+  temperature: 0.07
+
+training:
+  batch_size: 48        # اگر گرافیک پر شد، این عدد را به 32 یا 16 کاهش دهید
+  epochs: 150
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  num_workers: 4
+  checkpoint_dir: "data/processed/checkpoints/"
+  resume_from_checkpoint: True
+  save_every_n_epochs: 5
+
+# --- بخش‌های قبلی پروژه شما (dataset, training, model) در اینجا قرار دارند ---
+
+# تنظیمات لایه فیوژن (ترکیب‌کننده تصویر و جدول)
+fusion:
+  fusion_type: "concat"       # در حال حاضر بهترین روش برای پایان‌نامه‌هاست
+  dropout_rate: 0.3
+  hidden_dim: 256
+  freeze_ssl_backbone: False  # اگر True باشد، وزن‌های فاز اول قفل می‌شوند (Linear Probing)
+
+# تنظیمات فاز فاین‌تیونینگ (Fine-tuning)
+finetuning:
+  batch_size: 32
+  learning_rate: 0.00005
+  weight_decay: 0.01
+  epochs: 50
+  save_dir: "data/processed/finetuned_models/"
+  
+  # تنظیمات اختصاصی هر تسک
+  tasks:
+    multilabel_5:
+      num_classes: 5
+      classes: ["diabetic_retinopathy", "increased_cup_disc", "macular_edema", "myopic_fundus", "amd"]
+      criterion: "BCEWithLogitsLoss"
+      
+    dr_3class:
+      num_classes: 3
+      classes: ["normal", "npdr", "pdr"]
+      criterion: "CrossEntropyLoss" # برای تسک‌های چندکلاسه
+      
+    dr_binary:
+      num_classes: 1
+      classes: ["diabetic_retinopathy"]
+      criterion: "BCEWithLogitsLoss" # برای تسک‌های باینری
