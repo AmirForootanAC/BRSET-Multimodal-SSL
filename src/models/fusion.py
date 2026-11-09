@@ -1,3 +1,7 @@
+import os
+import sys
+sys.path.append('..')
+
 import torch
 import torch.nn as nn
 from models.multimodal import BRSETMultimodalSSL
@@ -7,31 +11,41 @@ class MetaFusionBlock(nn.Module):
         super(MetaFusionBlock, self).__init__()
         self.W_img_to_tab = nn.Linear(dim, dim)
         self.W_tab_to_img = nn.Linear(dim, dim)
+        self.norm_img = nn.LayerNorm(dim)
+        self.norm_tab = nn.LayerNorm(dim)
 
     def forward(self, img_emb, tab_emb):
         img_correction = img_emb * torch.tanh(img_emb * self.W_tab_to_img(tab_emb))
         tab_correction = tab_emb * torch.tanh(tab_emb * self.W_img_to_tab(img_emb))
-
-        new_img_emb = img_emb + img_correction
-        new_tab_emb = tab_emb + tab_correction
-
-        return new_img_emb, new_tab_emb
+        out_img = self.norm_img(img_emb + img_correction)
+        out_tab = self.norm_tab(tab_emb + tab_correction)
+        return out_img, out_tab
 
 class BRSETClassifier(nn.Module):
-    def __init__(self, config, task_name="multilabel_5"):
+    def __init__(self, config, task_name="dr_3class", vision_weights_path=None):
         super(BRSETClassifier, self).__init__()
         
-        self.task_config = config['finetuning']['tasks'][task_name]
+        if 'task' in config:
+            self.task_config = config['task']
+        elif 'finetuning' in config and 'task' in config['finetuning']:
+            self.task_config = config['finetuning']['task']
+        else:
+            self.task_config = {'num_classes': 3}
+            
         self.fusion_config = config['fusion']
+        embed_dim = int(config['model']['embed_dim'])
+        num_classes = int(self.task_config.get('num_classes', 3))
+        hidden_dim = int(self.fusion_config.get('hidden_dim', 256))
+        dropout_rate = float(self.fusion_config.get('dropout_rate', 0.3))
         
-        embed_dim = config['model']['embed_dim']
-        num_classes = self.task_config['num_classes']
-        hidden_dim = self.fusion_config['hidden_dim']
-        dropout_rate = self.fusion_config['dropout_rate']
-        
+        if vision_weights_path is None:
+            vision_weights_path = config['model'].get('vision_weights', "../data/weights/flair_resnet.pth")
+            
         self.ssl_base = BRSETMultimodalSSL(
             embed_dim=embed_dim, 
-            num_tabular_features=config['dataset']['num_tabular_features']
+            num_tabular_features=int(config['dataset']['num_tabular_features']),
+            temperature=float(config['model'].get('temperature', 0.07)),
+            vision_weights_path=vision_weights_path
         )
         
         if self.fusion_config.get('freeze_ssl_backbone', False):
@@ -39,32 +53,46 @@ class BRSETClassifier(nn.Module):
                 param.requires_grad = False
                 
         self.meta_fusion = MetaFusionBlock(dim=embed_dim)
+        fusion_dim = embed_dim * 2
         
-        fusion_dim = embed_dim * 2 
-        
-        self.classifier = nn.Sequential(
+        # شاخه پردازش تعاملی چندوجهی (Multimodal SSL Branch)
+        self.multimodal_head = nn.Sequential(
             nn.Linear(fusion_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate - 0.1),
-            nn.Linear(hidden_dim // 2, num_classes)
+            nn.Linear(hidden_dim, num_classes)
         )
+        
+        # شاخه مستقیم ویژگی‌های 2048 بعدیِ تصویر (High-Resolution Visual Residual Stream)
+        self.visual_residual_head = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(2048, num_classes)
+        )
+        
+        # ضریب یادگیرنده برای ترکیب هوشمند شاخه تصویری و شاخه چندوجهی
+        self.multimodal_gate = nn.Parameter(torch.tensor(0.5))
 
     def load_ssl_weights(self, checkpoint_path, device):
-        print(f"Loading pre-trained SSL weights from: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        self.ssl_base.load_state_dict(checkpoint['model_state_dict'], strict=False)
-        print("SSL weights successfully loaded into the backbone!")
+        if os.path.exists(checkpoint_path):
+            print(f"🔄 Loading pre-trained SSL weights from: {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+            state_dict = checkpoint.get('model_state_dict', checkpoint)
+            self.ssl_base.load_state_dict(state_dict, strict=False)
+            print("✅ SSL weights successfully loaded into the backbone!")
+        else:
+            print(f"⚠️ SSL checkpoint not found at {checkpoint_path}. Proceeding with initialized weights.")
 
     def forward(self, images, tabular_data, masks):
-        img_emb, tab_emb = self.ssl_base(images, tabular_data, masks)
-        
+        img_emb, tab_emb, backbone_feat = self.ssl_base.forward_with_backbone(images, tabular_data, masks)
         new_img_emb, new_tab_emb = self.meta_fusion(img_emb, tab_emb)
-        
         fused_features = torch.cat((new_img_emb, new_tab_emb), dim=1)
         
-        logits = self.classifier(fused_features)
-        return logits
+        mm_logits = self.multimodal_head(fused_features)
+        
+        if backbone_feat is not None:
+            vis_logits = self.visual_residual_head(backbone_feat)
+            gate = torch.sigmoid(self.multimodal_gate)
+            return vis_logits + gate * mm_logits
+            
+        return mm_logits

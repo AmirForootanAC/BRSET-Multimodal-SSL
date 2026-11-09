@@ -1,45 +1,62 @@
-#==========================================
-#3-Class DR (Normal, NPDR, PDR) Configuration
-#==========================================
+# ==========================================
+# 3-Class DR (Normal, NPDR, PDR) Configuration - Laptop Optimized V2
+# ==========================================
 
 dataset:
   csv_path: "../../data/raw/labels_brset.csv"
   img_dir: "../../data/raw/images/"
-  image_size: 448
-  num_tabular_features: 8  # 5 پایه + 3 آناتومیک (macula, optic_disc, vessels)
+  image_size: 448           # پیش‌فرض برای Fine-tune و Baseline
+  ssl_image_size: 224       # مخصوص SSL روی گرافیک لپ‌تاپ
+  finetune_image_size: 448  # مخصوص Fine-tune و Baseline با جزئیات کامل شبکیه
+  num_tabular_features: 8   # 5 پایه + 3 آناتومیک (macula, optic_disc, vessels)
 
 model:
   embed_dim: 256
-  vision_weights: "/home/ubuntu/BRSET-Multimodal-SSL/data/weights/flair_resnet.pth"
+  vision_weights: "../../data/weights/flair_resnet.pth"
   temperature: 0.07
 
 fusion:
-  fusion_type: "concat"
-  dropout_rate: 0.4
+  fusion_type: "concat_residual"
+  dropout_rate: 0.3
   hidden_dim: 256
+  modality_dropout_p: 0.25  # جلوگیری از تنبلی شبکه تصویری
   freeze_ssl_backbone: False
 
 ssl_training:
-  batch_size: 64
+  batch_size: 32
+  grad_accum_steps: 2       # بچ‌سایز مؤثر = 64 بدون فشار به VRAM لپ‌تاپ
   epochs: 500
   learning_rate: 0.0003
   weight_decay: 0.0001
+  supcon_weight: 0.4        # وزن خطای Supervised Contrastive برای تفکیک کلاس‌ها در SSL
   num_workers: 4
-  checkpoint_dir: "../../data/processed/checkpoints_dr3/"
+  checkpoint_dir: "../../data/processed/experiments_dr3_v2/ssl_pretrain/"
   resume_from_checkpoint: True
   save_every_n_epochs: 5
-  early_stopping_patience: 25  
+  early_stopping_patience: 15
 
 finetuning:
-  batch_size: 32
-  learning_rate: 0.0001
-  weight_decay: 0.015
-  epochs: 50
-  save_dir: "../../data/processed/finetuned_models_dr3/"
-  early_stopping_patience: 15
+  batch_size: 16
+  grad_accum_steps: 2       # بچ‌سایز مؤثر = 32 (جلوگیری از Shared VRAM و کندی در سایز 448)
+  backbone_lr: 0.00005      # 5e-5 برای سازگاری عالی ResNet با سایز 448
+  learning_rate: 0.00015    # 1.5e-4 برای لایه‌های Fusion و Classifier
+  weight_decay: 0.01
+  epochs: 40
+  save_dir: "../../data/processed/experiments_dr3_v2/finetune_multimodal/"
+  early_stopping_patience: 10
   label_percent: 100
-  num_workers: 8
+  num_workers: 4
   mixed_precision: True
+
+baseline:
+  batch_size: 16
+  grad_accum_steps: 2       # بچ‌سایز مؤثر = 32
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  epochs: 40
+  early_stopping_patience: 10
+  num_workers: 4
+  save_dir: "../../data/processed/experiments_dr3_v2/baseline_vanilla_resnet50/"
 
 task:
   name: "dr_3class"
