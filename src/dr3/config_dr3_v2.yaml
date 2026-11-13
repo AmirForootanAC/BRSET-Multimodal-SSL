@@ -1,0 +1,74 @@
+# ==========================================
+# 3-Class DR Configuration - Pure Multimodal SSL (Hybrid MoCo-v2 + VICReg)
+# Optimized for 4GB Laptop GPU & Kaggle Fine-Tuning
+# ==========================================
+
+dataset:
+  csv_path: "../../data/raw/labels_brset.csv"
+  img_dir: "../../data/raw/images/"
+  image_size: 448
+  ssl_image_size: 448
+  finetune_image_size: 448
+  num_tabular_features: 8
+
+model:
+  embed_dim: 256
+  vision_weights: "../../data/weights/flair_resnet.pth"
+  temperature: 0.10
+
+fusion:
+  fusion_type: "concat_residual"
+  dropout_rate: 0.3
+  hidden_dim: 256
+  modality_dropout_p: 0.25
+  freeze_ssl_backbone: False
+
+ssl_training:
+  ssl_method: "hybrid_moco_v2_vicreg_fnmask"
+  batch_size: 8               # ایمن برای 4GB VRAM در سایز 448
+  grad_accum_steps: 16        # بچ‌سایز مؤثر گرادیان = 128
+  queue_size: 2048            # سایز صف MoCo v2
+  moco_momentum: 0.996        # ضریب آپدیت نرم Momentum Encoder
+  vicreg_weight: 0.15         # وزن منظم‌ساز واریانس-کوواریانس (VICReg)
+  fn_sim_threshold: 0.98      # آستانه فیلتر کردن جدول‌های بالینی تکراری در صف
+  warmup_queue_epochs: 2      # ثبت Best Loss پس از پر شدن صف با داده‌های واقعی
+  epochs: 300                 # سقف بهینه برای کاهش کسینوسی نرخ یادگیری
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  supcon_weight: 0.0          # بدون استفاده از لیبل در پیش‌آموزش
+  num_workers: 4
+  checkpoint_dir: "../../data/processed/experiments_dr3_pure_ssl_v2/ssl_pretrain/"
+  resume_from_checkpoint: False
+  save_every_n_epochs: 5
+  early_stopping_patience: 25
+
+finetuning:
+  batch_size: 16
+  grad_accum_steps: 2
+  backbone_lr: 0.00003        # 3e-5 ملایم برای حفظ ویژگی‌های SSL و جلوگیری از افت AUROC
+  learning_rate: 0.00015      # 1.5e-4 برای لایه‌های Fusion و Classifier
+  warmup_freeze_epochs: 3     # فریز بک‌بون در ۳ اپوک اول
+  class_weight_power: 0.50    # وزن‌های [0.598, 2.811, 3.699] برای حفظ قدرت Macro-F1
+  weight_decay: 0.01
+  epochs: 40
+  save_dir: "../../data/processed/experiments_dr3_pure_ssl_v2/finetune_multimodal/"
+  early_stopping_patience: 12
+  label_percent: 100
+  num_workers: 4
+  mixed_precision: True
+
+baseline:
+  batch_size: 16
+  grad_accum_steps: 2
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  epochs: 40
+  early_stopping_patience: 10
+  num_workers: 4
+  save_dir: "../../data/processed/experiments_dr3_pure_ssl_v2/baseline_vanilla_resnet50/"
+
+task:
+  name: "dr_3class"
+  num_classes: 3
+  classes: ["Normal", "NPDR", "PDR"]
+  criterion: "CalibratedWeightedLoss"
