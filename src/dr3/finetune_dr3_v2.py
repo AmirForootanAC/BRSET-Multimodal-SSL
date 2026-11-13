@@ -93,13 +93,14 @@ def set_backbone_trainable(model, trainable=True):
             param.requires_grad = trainable
 
 
-def evaluate_model(eval_model, loader, criterion, device, use_amp):
+def evaluate_model(eval_model, loader, criterion, device, use_amp, desc="Evaluating", leave=False):
     eval_model.eval()
     total_loss = 0.0
     all_labels, all_probs = [], []
 
+    progress_bar = tqdm(loader, desc=desc, leave=leave)
     with torch.no_grad():
-        for batch in loader:
+        for batch in progress_bar:
             images = batch['image'].to(device, non_blocking=True)
             tabular = batch['tabular'].to(device, non_blocking=True)
             masks = batch['mask'].to(device, non_blocking=True)
@@ -109,10 +110,12 @@ def evaluate_model(eval_model, loader, criterion, device, use_amp):
                 logits = eval_model(images, tabular, masks)
                 loss = criterion(logits, labels)
 
-            total_loss += loss.item()
+            batch_loss = loss.item()
+            total_loss += batch_loss
             probs = torch.softmax(logits.float(), dim=1).cpu()
             all_labels.append(labels.cpu())
             all_probs.append(probs)
+            progress_bar.set_postfix({'loss': f"{batch_loss:.4f}"})
 
     avg_loss = total_loss / max(len(loader), 1)
     y_true = torch.cat(all_labels, dim=0).numpy()
@@ -328,10 +331,12 @@ def main():
         avg_train_loss = train_loss / len(train_loader)
 
         val_loss_raw, acc_raw, f1_raw, auroc_raw, per_cls_raw, _, _, _ = evaluate_model(
-            model, val_loader, criterion, device, use_amp
+            model, val_loader, criterion, device, use_amp,
+            desc=f"Epoch {epoch+1}/{num_epochs} [Val-RAW]", leave=False
         )
         val_loss_ema, acc_ema, f1_ema, auroc_ema, per_cls_ema, _, _, _ = evaluate_model(
-            ema_helper.ema_model, val_loader, criterion, device, use_amp
+            ema_helper.ema_model, val_loader, criterion, device, use_amp,
+            desc=f"Epoch {epoch+1}/{num_epochs} [Val-EMA]", leave=False
         )
 
         score_raw = 0.72 * f1_raw + 0.28 * auroc_raw
@@ -386,7 +391,8 @@ def main():
         print(f"Loaded best calibrated checkpoint from {save_path}")
 
     avg_test_loss, test_acc, test_macro_f1, test_auroc, per_class_f1, y_true_test, y_pred_test, _ = evaluate_model(
-        model, test_loader, criterion, device, use_amp
+        model, test_loader, criterion, device, use_amp,
+        desc="Evaluating Test Set", leave=True
     )
 
     cls_report = classification_report(y_true_test, y_pred_test, target_names=class_names, digits=4)
