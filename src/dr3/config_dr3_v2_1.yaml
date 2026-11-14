@@ -1,0 +1,45 @@
+# ==========================================
+# Kaggle Optimized Configuration - Pure SSL V2.1 Fine-Tuning (Cross-Attention + Focal)
+# ==========================================
+
+dataset:
+  csv_path: "/kaggle/input/brset-multimodal-dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.1/labels_brset.csv"
+  img_dir: "/kaggle/input/brset-multimodal-dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.1/fundus_photos/"
+  image_size: 448
+  finetune_image_size: 448
+  num_tabular_features: 8
+
+model:
+  embed_dim: 256
+  vision_weights: "/kaggle/input/flair-retina-weights/flair_resnet.pth"
+
+fusion:
+  fusion_type: "cross_attention"
+  dropout_rate: 0.3
+  hidden_dim: 512
+  modality_dropout_p: 0.20
+
+ssl_training:
+  checkpoint_dir: "/kaggle/input/experiments-dr3-pure-ssl-v2/"
+
+finetuning:
+  batch_size: 16
+  grad_accum_steps: 2
+  backbone_lr: 0.00003
+  learning_rate: 0.00030
+  warmup_freeze_epochs: 2
+  class_weight_power: 0.55
+  focal_gamma: 1.25
+  weight_decay: 0.01
+  epochs: 50
+  early_stopping_patience: 15
+  label_percent: 100
+  num_workers: 4
+  mixed_precision: True
+  save_dir: "/kaggle/working/finetune_results_v2_1/"
+
+task:
+  name: "dr_3class"
+  num_classes: 3
+  classes: ["Normal", "NPDR", "PDR"]
+  criterion: "CalibratedFocalWeightedLoss"
